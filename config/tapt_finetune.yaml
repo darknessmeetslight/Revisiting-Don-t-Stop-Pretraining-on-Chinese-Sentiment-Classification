@@ -1,0 +1,29 @@
+experiment_name: tapt_finetune
+seed: 42
+
+model:
+  name_or_path: ./models/tapt          # 加载 TAPT 之后的模型作为分类起点
+  num_labels: 2
+
+data:
+  max_seq_length: 128
+
+train:
+  batch_size: 32
+  eval_batch_size: 64
+  learning_rate: 2.0e-5
+  weight_decay: 0.01
+  num_epochs: 3
+  warmup_ratio: 0.1
+  logging_steps: 50
+  eval_strategy: epoch
+  save_strategy: epoch
+  save_total_limit: 1
+  load_best_model_at_end: true
+  metric_for_best_model: f1
+  greater_is_better: true
+  fp16: false
+  bf16: true
+
+output:
+  base_dir: outputs                   # 最终输出目录:outputs/<experiment_name>/

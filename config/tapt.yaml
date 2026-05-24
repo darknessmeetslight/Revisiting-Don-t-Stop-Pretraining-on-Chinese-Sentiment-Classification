@@ -1,0 +1,25 @@
+experiment_name: tapt
+seed: 42
+
+model:
+  name_or_path: bert-base-chinese     # MLM 继续预训练的起点
+
+data:
+  source: chnsenticorp_train          # TAPT:仅用 ChnSentiCorp 训练集文本(不带标签)
+  max_seq_length: 128
+  mlm_probability: 0.15               # 与 BERT 原论文一致
+
+train:
+  batch_size: 32
+  learning_rate: 5.0e-5               # MLM 学习率比下游 fine-tune 略大
+  weight_decay: 0.01
+  num_epochs: 3                       # TAPT 论文常用 3~10,我们先用 3
+  warmup_ratio: 0.1
+  logging_steps: 50
+  save_strategy: epoch
+  save_total_limit: 1
+  fp16: false
+  bf16: true                          # 4080 SUPER 支持 bf16,比 fp16 更稳
+
+output:
+  models_dir: models                  # 最终模型落到 models/<experiment_name>/

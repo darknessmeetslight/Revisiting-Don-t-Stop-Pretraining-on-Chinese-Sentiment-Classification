@@ -1,0 +1,23 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv/
+
+# Project data & artifacts (too large / non-source)
+/bert/
+datasets/
+models/
+outputs/
+
+# Binary docs in docx/ (keep the markdown summaries tracked)
+/docx/
+
+# OS
+.DS_Store
+Thumbs.db
