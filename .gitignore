@@ -10,10 +10,11 @@ wheels/
 .venv/
 
 # Project data & artifacts (too large / non-source)
-/bert/
+bert/
 datasets/
 models/
 outputs/
+paper/
 
 # Binary docs in docx/ (keep the markdown summaries tracked)
 /docx/
@@ -21,3 +22,6 @@ outputs/
 # OS
 .DS_Store
 Thumbs.db
+
+# 其他文件
+plan.md
