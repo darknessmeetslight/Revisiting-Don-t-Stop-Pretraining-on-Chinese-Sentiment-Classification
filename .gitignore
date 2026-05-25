@@ -23,5 +23,7 @@ paper/
 .DS_Store
 Thumbs.db
 
-# 其他文件
+
+# Private working notes
 plan.md
+nohup_*.log
