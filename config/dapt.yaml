@@ -1,0 +1,25 @@
+experiment_name: dapt
+seed: 42
+
+model:
+  name_or_path: bert-base-chinese     # MLM 继续预训练的起点
+
+data:
+  source: online_shopping_10_cats     # DAPT:6 万条中文电商评论(无标签)
+  max_seq_length: 128
+  mlm_probability: 0.15               # 与 BERT 原论文一致
+
+train:
+  batch_size: 32
+  learning_rate: 5.0e-5               # MLM 学习率比下游 fine-tune 略大
+  weight_decay: 0.01
+  num_epochs: 1                       # DAPT 语料是 TAPT 的 ~6.5 倍,1 epoch 总步数已超过 TAPT 3 epoch
+  warmup_ratio: 0.1
+  logging_steps: 50
+  save_strategy: epoch
+  save_total_limit: 1
+  fp16: false
+  bf16: true
+
+output:
+  models_dir: models                  # 最终模型落到 models/<experiment_name>/

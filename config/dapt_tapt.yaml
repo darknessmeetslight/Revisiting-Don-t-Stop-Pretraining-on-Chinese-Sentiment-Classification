@@ -1,0 +1,25 @@
+experiment_name: dapt_tapt
+seed: 42
+
+model:
+  name_or_path: ./models/dapt         # 从 DAPT 后的模型起步,再做 TAPT
+
+data:
+  source: chnsenticorp_train          # TAPT 阶段:用 ChnSentiCorp 训练集文本(无标签)
+  max_seq_length: 128
+  mlm_probability: 0.15
+
+train:
+  batch_size: 32
+  learning_rate: 5.0e-5
+  weight_decay: 0.01
+  num_epochs: 3                       # 与单独 TAPT 对齐,便于公平对比
+  warmup_ratio: 0.1
+  logging_steps: 50
+  save_strategy: epoch
+  save_total_limit: 1
+  fp16: false
+  bf16: true
+
+output:
+  models_dir: models                  # 输出到 models/dapt_tapt/

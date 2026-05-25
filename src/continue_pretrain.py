@@ -24,7 +24,7 @@ from transformers import (
     TrainingArguments,
 )
 
-from .data import load_chnsenticorp
+from .data import load_chnsenticorp, load_online_shopping
 from .utils import PROJECT_ROOT, set_seed, setup_logger
 
 
@@ -40,7 +40,9 @@ def load_corpus(source: str) -> Dataset:
         # TAPT:直接用 ChnSentiCorp 训练集的文本(标签不参与 MLM)
         ds = load_chnsenticorp()
         return ds["train"].select_columns(["text"])
-    # DAPT:online_shopping_10_cats 等领域语料后续在此追加分支
+    if source == "online_shopping_10_cats":
+        # DAPT:用 6 万条中文电商评论做领域自适应,只取 review 文本,丢标签
+        return load_online_shopping()
     raise ValueError(f"未知的数据源: {source}")
 
 
