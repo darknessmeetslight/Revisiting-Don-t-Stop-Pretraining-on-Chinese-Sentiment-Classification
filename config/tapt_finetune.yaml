@@ -1,8 +1,8 @@
 experiment_name: tapt_finetune
-seed: 42
+seeds: [42, 1337, 2026]               # 多 seed:与上游 TAPT 的 seed 对齐
 
 model:
-  name_or_path: ./models/tapt          # 加载 TAPT 之后的模型作为分类起点
+  name_or_path: ./models/tapt-s{seed}  # {seed} 由脚本运行时按当前 seed 替换
   num_labels: 2
 
 data:

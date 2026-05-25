@@ -1,8 +1,8 @@
 experiment_name: dapt_tapt
-seed: 42
+seeds: [42, 1337, 2026]               # 多 seed:DAPT+TAPT 整条 pipeline 都用同 seed
 
 model:
-  name_or_path: ./models/dapt         # 从 DAPT 后的模型起步,再做 TAPT
+  name_or_path: ./models/dapt-s{seed} # 从同 seed 的 DAPT 模型起步再做 TAPT
 
 data:
   source: chnsenticorp_train          # TAPT 阶段:用 ChnSentiCorp 训练集文本(无标签)

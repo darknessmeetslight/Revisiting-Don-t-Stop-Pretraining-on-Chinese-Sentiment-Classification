@@ -1,5 +1,5 @@
 experiment_name: baseline
-seed: 42
+seeds: [42, 1337, 2026]               # 多 seed 实验,产物各自落到 outputs/<name>-s<seed>/
 
 model:
   name_or_path: bert-base-chinese    # 备选:hfl/chinese-bert-wwm-ext

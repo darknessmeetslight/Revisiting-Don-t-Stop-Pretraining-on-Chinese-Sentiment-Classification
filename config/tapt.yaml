@@ -1,5 +1,5 @@
 experiment_name: tapt
-seed: 42
+seeds: [42, 1337, 2026]               # 多 seed:产物落到 models/tapt-s<seed>/
 
 model:
   name_or_path: bert-base-chinese     # MLM 继续预训练的起点
