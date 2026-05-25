@@ -1,0 +1,26 @@
+experiment_name: dapt_size50
+seeds: [1337]                          # 消融实验单 seed
+
+model:
+  name_or_path: bert-base-chinese      # MLM 继续预训练的起点
+
+data:
+  source: online_shopping_10_cats      # DAPT:电商评论语料
+  subset_ratio: 0.5                    # 数据规模消融:用 50% 子集(~31000 条)
+  max_seq_length: 128
+  mlm_probability: 0.15
+
+train:
+  batch_size: 32
+  learning_rate: 5.0e-5
+  weight_decay: 0.01
+  num_epochs: 1                        # 与主实验 DAPT 对齐,只改数据规模
+  warmup_ratio: 0.1
+  logging_steps: 50
+  save_strategy: epoch
+  save_total_limit: 1
+  fp16: false
+  bf16: true
+
+output:
+  models_dir: models

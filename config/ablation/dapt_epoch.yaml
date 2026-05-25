@@ -1,0 +1,27 @@
+experiment_name: dapt_epoch
+seeds: [1337]                          # 消融实验单 seed
+
+model:
+  name_or_path: bert-base-chinese      # MLM 继续预训练的起点
+
+data:
+  source: online_shopping_10_cats      # 与主实验 DAPT 同语料(100% 数据)
+  max_seq_length: 128
+  mlm_probability: 0.15
+
+train:
+  batch_size: 32
+  learning_rate: 5.0e-5
+  weight_decay: 0.01
+  num_epochs: 3                        # epoch 消融:跑满 3 epoch,中间状态由 callback 单独存
+  warmup_ratio: 0.1
+  logging_steps: 50
+  save_strategy: epoch
+  save_total_limit: 1
+  fp16: false
+  bf16: true
+
+output:
+  models_dir: models
+  save_every_epoch: true               # 关键:启用 SaveEveryEpochCallback,每 epoch 存独立产物
+                                       # 产出 models/dapt_epoch_epoch1-s1337/ / _epoch2- / _epoch3-

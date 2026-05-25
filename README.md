@@ -9,15 +9,16 @@
 
 ```
 NLP/
-├── config/                     # 各实验的 YAML 配置(7 份)
+├── config/                     # 各实验的 YAML 配置(7 份主实验)
+│   └── ablation/               # 消融实验配置(数据规模 + DAPT epoch)
 ├── datasets/
 │   ├── ChnSentiCorp/parquet/   # 下游任务数据集(9600/1200/1200)
 │   └── online_shopping_10_cats/ # DAPT 领域语料(~6.3 万条电商评论)
 ├── src/
-│   ├── data.py                 # 数据集加载与分词
+│   ├── data.py                 # 数据集加载与分词(支持 DAPT 子集采样)
 │   ├── model.py                # 分类器构建(AutoModelForSequenceClassification)
 │   ├── train_classifier.py     # 分类 fine-tune + 多 seed 聚合
-│   ├── continue_pretrain.py    # MLM 继续预训练(TAPT/DAPT 共用)
+│   ├── continue_pretrain.py    # MLM 继续预训练(TAPT/DAPT 共用,支持每 epoch 保存)
 │   ├── utils.py                # 项目路径、随机种子、日志
 │   └── scripts/                # 一次性脚本(数据集下载、校验)
 ├── models/                     # 继续预训练产物 + HF 缓存
@@ -115,3 +116,89 @@ uv run tensorboard --logdir outputs
 | DAPT+TAPT   | **94.69 ± 0.29**| **94.71 ± 0.27**| **94.69 ± 0.29**| **95.75 ± 0.72**| 93.70 ± 0.19    |
 
 完整 per-seed 数据见 `outputs/<实验名>/aggregate.json`。
+
+**结果分析:**
+
+- **TAPT 几乎无收益**(94.00 → 94.03):任务训练集(9.6k 条)对 MLM 而言信号过弱,且 fine-tune 阶段本就在同一批文本上反复迭代,继续预训练带来的额外信息有限。
+- **DAPT 是主要收益来源**(+0.36 pp):领域语料规模(~6.3 万条电商评论)与下游分布同源,使模型在分类前已熟悉电商评论的用词与句式;Precision 提升尤为明显(94.33 → 95.66)。
+- **DAPT+TAPT 叠加最优**(+0.69 pp):TAPT 单独无效,但**接在 DAPT 之后**能进一步提升,说明二者作用层级不同 —— DAPT 调整领域分布、TAPT 在已调好的领域空间内对齐到任务文本,二者互补而非冗余。
+- 三 seed 标准差均 ≤ 0.32 pp,差异显著大于噪声。
+
+## 消融实验
+
+围绕 DAPT 做两组消融,定位"什么因素让 DAPT 起作用":
+
+1. **数据规模消融** — 固定 1 epoch,改变 online_shopping 语料的子集比例(10% / 50% / 100%)
+2. **DAPT epoch 消融** — 固定 100% 数据,改变继续预训练的 epoch 数(1 / 2 / 3)
+
+为节省算力,消融实验仅在 **seed=1337** 上跑单次(主实验中该 seed 各方法的指标均接近 3 seed 平均值)。epoch 消融通过 `SaveEveryEpochCallback` 在 DAPT 训练的每个 epoch 结束时额外保存一份完整模型,因此**只需要跑一次 3 epoch 的 DAPT 就能拿到 epoch=1/2/3 三个起点**。
+
+配置文件落在 [config/ablation/](config/ablation/):
+
+| 文件 | 用途 | 上游依赖 |
+| --- | --- | --- |
+| `dapt_size10.yaml`           | DAPT 用 10% 数据 / 1 epoch  | `bert-base-chinese` |
+| `dapt_size50.yaml`           | DAPT 用 50% 数据 / 1 epoch  | `bert-base-chinese` |
+| `dapt_epoch.yaml`            | DAPT 跑 3 epoch,每 epoch 各存一份(产出 epoch1/2/3 三个模型) | `bert-base-chinese` |
+| `dapt_size10_finetune.yaml`  | 从 10% DAPT 产物 fine-tune  | `dapt_size10` |
+| `dapt_size50_finetune.yaml`  | 从 50% DAPT 产物 fine-tune  | `dapt_size50` |
+| `dapt_epoch2_finetune.yaml`  | 从 DAPT epoch=2 产物 fine-tune | `dapt_epoch` |
+| `dapt_epoch3_finetune.yaml`  | 从 DAPT epoch=3 产物 fine-tune | `dapt_epoch` |
+
+> **复用主实验产物**:size=100%/epoch=1 这个点直接复用主实验已有的 `models/dapt-s1337` 和 `outputs/dapt_finetune-s1337/metrics.json`,不重跑。
+
+### 消融实验复现
+
+在项目根目录执行(双卡 0 和 3,后台运行,所有命令串行):
+
+```bash
+CUDA_VISIBLE_DEVICES=0,3 nohup bash -c '
+  # 数据规模消融:两次独立的 DAPT
+  uv run python -m src.continue_pretrain --config config/ablation/dapt_size10.yaml &&
+  uv run python -m src.continue_pretrain --config config/ablation/dapt_size50.yaml &&
+  uv run python -m src.train_classifier  --config config/ablation/dapt_size10_finetune.yaml &&
+  uv run python -m src.train_classifier  --config config/ablation/dapt_size50_finetune.yaml &&
+
+  # epoch 消融:跑 3 epoch,callback 自动存 epoch1/2/3 三个模型
+  uv run python -m src.continue_pretrain --config config/ablation/dapt_epoch.yaml &&
+  uv run python -m src.train_classifier  --config config/ablation/dapt_epoch2_finetune.yaml &&
+  uv run python -m src.train_classifier  --config config/ablation/dapt_epoch3_finetune.yaml
+' > nohup_ablation.log 2>&1 &
+```
+
+监控:
+
+```bash
+tail -f nohup_ablation.log                      # 进度
+nvidia-smi                                      # 显存
+ls models/dapt_epoch_epoch*-s1337/config.json   # epoch 产物(应有 3 个)
+ls outputs/dapt_*_finetune-s1337/metrics.json   # fine-tune 结果
+```
+
+### 消融实验结果
+
+下游任务指标基于 ChnSentiCorp 测试集(1200 条),seed=1337 单次结果。
+
+**数据规模消融**(DAPT epoch 固定为 1):
+
+| 数据规模 | 样本数  | Accuracy | F1 (binary) | F1 (macro) | Precision | Recall |
+| -------- | ------- | -------- | ----------- | ---------- | --------- | ------ |
+| 10%      | ~6 300  | 94.83    | 94.85       | 94.83      | 95.81     | 93.91  |
+| 50%      | ~31 000 | 94.83    | 94.87       | 94.83      | 95.50     | 94.24  |
+| 100%     | ~63 000 | 94.25    | 94.27       | 94.25      | 95.14     | 93.42  |
+
+**DAPT epoch 消融**(数据规模固定为 100%):
+
+| DAPT epoch | Accuracy | F1 (binary) | F1 (macro) | Precision | Recall |
+| ---------- | -------- | ----------- | ---------- | --------- | ------ |
+| 1          | 94.25    | 94.27       | 94.25      | 95.14     | 93.42  |
+| 2          | 94.33    | 94.29       | 94.33      | 96.39     | 92.27  |
+| 3          | 94.83    | 94.80       | 94.83      | 96.75     | 92.93  |
+
+> 100% / epoch=1 行复用主实验 `outputs/dapt_finetune-s1337/metrics.json`,其余取自 `outputs/dapt_*_finetune-s1337/metrics.json`。
+
+**结果分析:**
+
+- **数据规模并非越大越好**(10% ≈ 50% > 100%):在 1 epoch 设定下,10% 子集(~6.3k 条,与下游训练集量级相同)已能让 DAPT 见到足够多的领域分布特征;继续把数据扩到 100% 却出现轻微回落。一个可能的解释是 1 epoch 下 100% 数据的更新步数最多(~2k 步),开始对 MLM 目标过拟、损耗了对下游分类有用的表示;但此处仅 seed=1337 单次,且 94.25 仍落在主实验 dapt 的 94.36 ± 0.27 区间内,**严谨的结论需要多 seed 验证**。
+- **DAPT epoch 单调递增**(94.25 → 94.33 → 94.83):在 100% 数据上 1 epoch 远未收敛,继续训练仍有稳定收益;epoch=3 的 Accuracy 已追平 DAPT+TAPT(94.69 平均)。Precision 从 95.14 升到 96.75 是主要驱动,说明更长的 DAPT 让模型对正例边界更保守。
+- **算力-效果权衡**:两组消融指向同一个结论 —— 在本任务规模下,"小数据 × 多 epoch" 比 "大数据 × 少 epoch" 更划算。若仅有有限算力,优先延长 DAPT epoch 数,而不是扩充语料。

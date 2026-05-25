@@ -8,6 +8,11 @@ config 里 seeds 字段是 list,每个 seed 跑一次,产物落到 models/<exp>-
 model.name_or_path 可用 {seed} 占位符(DAPT+TAPT 阶段从 ./models/dapt-s{seed} 起步会用到)。
 如果目标模型目录已存在则跳过该 seed,方便中断后继续跑。
 
+消融实验扩展:
+  - data.subset_ratio: 0~1 之间的浮点,用于数据规模消融,只截取 online_shopping 的前 N% 样本
+  - output.save_every_epoch: true 时,每个 epoch 结束都额外存一份完整模型到
+    models/<exp>_epoch{N}-s<seed>/,便于 epoch 消融时下游 fine-tune 复用中间状态
+
 用法(项目根目录):
     uv run python -m src.continue_pretrain --config config/tapt.yaml
 """
@@ -25,6 +30,7 @@ from transformers import (
     AutoTokenizer,
     DataCollatorForLanguageModeling,
     Trainer,
+    TrainerCallback,
     TrainingArguments,
 )
 
@@ -38,14 +44,39 @@ def parse_args() -> argparse.Namespace:
     return p.parse_args()
 
 
-def load_corpus(source: str) -> Dataset:
-    """根据 source 标识加载继续预训练用的无标签文本,返回只含 text 列的 Dataset。"""
+def load_corpus(source: str, subset_ratio: float = 1.0) -> Dataset:
+    """根据 source 标识加载继续预训练用的无标签文本,返回只含 text 列的 Dataset。
+
+    subset_ratio < 1.0 仅对 online_shopping_10_cats 生效(用于 DAPT 数据规模消融)。
+    """
     if source == "chnsenticorp_train":
         ds = load_chnsenticorp()
         return ds["train"].select_columns(["text"])
     if source == "online_shopping_10_cats":
-        return load_online_shopping()
+        return load_online_shopping(subset_ratio=subset_ratio)
     raise ValueError(f"未知的数据源: {source}")
+
+
+class SaveEveryEpochCallback(TrainerCallback):
+    """每个 epoch 结束都把当前模型 + tokenizer 落到独立目录,供下游 fine-tune 复用。
+
+    目录命名 models/<base_exp_name>_epoch{N}-s<seed>/,N 从 1 开始计数。
+    """
+
+    def __init__(self, save_root: Path, base_exp_name: str, seed: int, tokenizer):
+        self.save_root = save_root
+        self.base_exp_name = base_exp_name
+        self.seed = seed
+        self.tokenizer = tokenizer
+
+    def on_epoch_end(self, args, state, control, model=None, **kwargs):
+        # state.epoch 训完一个 epoch 后是 1.0 / 2.0 / 3.0,取整即第 N 个 epoch
+        epoch_num = int(round(state.epoch))
+        out_dir = self.save_root / f"{self.base_exp_name}_epoch{epoch_num}-s{self.seed}"
+        out_dir.mkdir(parents=True, exist_ok=True)
+        model.save_pretrained(str(out_dir))
+        self.tokenizer.save_pretrained(str(out_dir))
+        print(f"[SaveEveryEpoch] epoch={epoch_num} -> {out_dir}")
 
 
 def run_one_seed(cfg: dict, seed: int, base_exp_name: str, corpus: Dataset) -> None:
@@ -120,12 +151,19 @@ def run_one_seed(cfg: dict, seed: int, base_exp_name: str, corpus: Dataset) -> N
         report_to=["tensorboard"],
     )
 
+    callbacks = []
+    if cfg.get("output", {}).get("save_every_epoch", False):
+        save_root = PROJECT_ROOT / cfg["output"]["models_dir"]
+        callbacks.append(SaveEveryEpochCallback(save_root, base_exp_name, seed, tokenizer))
+        logger.info(f"启用每 epoch 保存,产物落到 {save_root}/<exp>_epoch{{N}}-s{seed}/")
+
     trainer = Trainer(
         model=model,
         args=training_args,
         train_dataset=tokenized,
         processing_class=tokenizer,
         data_collator=collator,
+        callbacks=callbacks,
     )
 
     logger.info("开始 MLM 继续预训练...")
@@ -149,8 +187,12 @@ def main() -> None:
         seeds = [cfg["seed"]]
 
     # 语料只加载一次,所有 seed 共用(分词在循环内做,因为 tokenizer 可能随 base_model 变化)
-    corpus = load_corpus(cfg["data"]["source"])
-    print(f"原始语料样本数: {len(corpus)},将跑 {len(seeds)} 个 seed: {seeds}")
+    subset_ratio = cfg["data"].get("subset_ratio", 1.0)
+    corpus = load_corpus(cfg["data"]["source"], subset_ratio=subset_ratio)
+    print(
+        f"原始语料样本数: {len(corpus)} (subset_ratio={subset_ratio}),"
+        f"将跑 {len(seeds)} 个 seed: {seeds}"
+    )
 
     for seed in seeds:
         run_one_seed(cfg, seed, base_exp_name, corpus)
